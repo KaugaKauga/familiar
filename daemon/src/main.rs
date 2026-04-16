@@ -1,14 +1,17 @@
 mod copilot;
 mod github;
 mod pipeline;
+mod tui;
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tracing::{error, info, warn};
+
+use tui::{DashboardState, PipelineView};
 
 /// Guild -- an autonomous software factory daemon.
 /// Monitors a GitHub repo for labeled issues and drives them through
@@ -60,13 +63,10 @@ impl Config {
 }
 
 /// Persist the current pipelines map to state.json inside runs_dir.
-fn persist_state(
-    pipelines: &HashMap<u64, pipeline::Pipeline>,
-    runs_dir: &Path,
-) -> Result<()> {
+fn persist_state(pipelines: &HashMap<u64, pipeline::Pipeline>, runs_dir: &Path) -> Result<()> {
     let state_path = runs_dir.join("state.json");
-    let json = serde_json::to_string_pretty(pipelines)
-        .context("failed to serialize pipeline state")?;
+    let json =
+        serde_json::to_string_pretty(pipelines).context("failed to serialize pipeline state")?;
     std::fs::write(&state_path, json)
         .with_context(|| format!("failed to write state file at {}", state_path.display()))?;
     info!(path = %state_path.display(), "persisted pipeline state");
@@ -83,8 +83,13 @@ fn load_state(runs_dir: &Path) -> Result<HashMap<u64, pipeline::Pipeline>> {
     }
     let data = std::fs::read_to_string(&state_path)
         .with_context(|| format!("failed to read state file at {}", state_path.display()))?;
-    let pipelines: HashMap<u64, pipeline::Pipeline> = serde_json::from_str(&data)
-        .with_context(|| format!("failed to deserialize state file at {}", state_path.display()))?;
+    let pipelines: HashMap<u64, pipeline::Pipeline> =
+        serde_json::from_str(&data).with_context(|| {
+            format!(
+                "failed to deserialize state file at {}",
+                state_path.display()
+            )
+        })?;
     info!(
         count = pipelines.len(),
         path = %state_path.display(),
@@ -93,52 +98,24 @@ fn load_state(runs_dir: &Path) -> Result<HashMap<u64, pipeline::Pipeline>> {
     Ok(pipelines)
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    // --- tracing -----------------------------------------------------------
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("guild=info")),
-        )
-        .init();
-
-    // --- CLI / config ------------------------------------------------------
-    let cli = Cli::parse();
-    let config = Config::from_cli(&cli);
-
-    info!("=======================================================");
-    info!("  Guild daemon starting");
-    info!("  repo           : {}", config.repo);
-    info!("  label          : {}", config.label);
-    info!("  poll_interval  : {}s", config.poll_interval);
-    info!("  copilot_cmd    : {}", config.copilot_cmd);
-    info!("  runs_dir       : {}", config.runs_dir.display());
-    info!("=======================================================");
-
-    // --- ensure runs dir ---------------------------------------------------
-    std::fs::create_dir_all(&config.runs_dir).with_context(|| {
-        format!(
-            "failed to create runs directory at {}",
-            config.runs_dir.display()
-        )
-    })?;
-
-    // --- load persisted state ----------------------------------------------
-    let mut pipelines: HashMap<u64, pipeline::Pipeline> = load_state(&config.runs_dir)?;
-
-    // --- graceful shutdown flag --------------------------------------------
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let shutdown_hook = Arc::clone(&shutdown);
-    tokio::spawn(async move {
-        if let Err(e) = tokio::signal::ctrl_c().await {
-            error!("failed to listen for ctrl-c: {}", e);
+/// The daemon poll loop — runs as a background tokio task.
+async fn run_daemon(
+    config: Config,
+    dashboard: Arc<Mutex<DashboardState>>,
+    shutdown: Arc<AtomicBool>,
+) {
+    // Load persisted state
+    let mut pipelines: HashMap<u64, pipeline::Pipeline> = match load_state(&config.runs_dir) {
+        Ok(p) => p,
+        Err(e) => {
+            error!("failed to load state: {:#}", e);
+            HashMap::new()
         }
-        info!("received ctrl-c, shutting down after current cycle");
-        shutdown_hook.store(true, Ordering::SeqCst);
-    });
+    };
 
-    // --- main loop ---------------------------------------------------------
+    // Sync initial pipeline views to dashboard
+    update_dashboard(&pipelines, &dashboard);
+
     loop {
         if shutdown.load(Ordering::SeqCst) {
             info!("shutdown flag set, breaking out of main loop");
@@ -149,10 +126,19 @@ async fn main() -> Result<()> {
         let issues = match github::fetch_labeled_issues(&config.repo, &config.label).await {
             Ok(issues) => {
                 info!(count = issues.len(), "fetched labeled issues");
+                // Clear error on success
+                if let Ok(mut state) = dashboard.lock() {
+                    state.error_message = None;
+                    state.last_poll = Some(std::time::Instant::now());
+                }
                 issues
             }
             Err(e) => {
                 error!("failed to fetch issues: {:#}", e);
+                if let Ok(mut state) = dashboard.lock() {
+                    state.error_message = Some(format!("Poll error: {}", e));
+                    state.last_poll = Some(std::time::Instant::now());
+                }
                 tokio::time::sleep(std::time::Duration::from_secs(config.poll_interval)).await;
                 continue;
             }
@@ -161,12 +147,12 @@ async fn main() -> Result<()> {
         // 2. Create new pipelines for issues we have not seen yet.
         for issue in &issues {
             if !pipelines.contains_key(&issue.number) {
-                info!(issue = issue.number, "new issue detected, creating pipeline");
-                let p = pipeline::Pipeline::new(
-                    issue.number,
-                    config.repo.clone(),
-                    &config.runs_dir,
+                info!(
+                    issue = issue.number,
+                    "new issue detected, creating pipeline"
                 );
+                let p =
+                    pipeline::Pipeline::new(issue.number, config.repo.clone(), &config.runs_dir);
                 pipelines.insert(issue.number, p);
             }
         }
@@ -182,18 +168,15 @@ async fn main() -> Result<()> {
                     Ok(true) => {
                         info!(issue = key, "pipeline made progress");
                     }
-                    Ok(false) => {
-                        // No progress this cycle, nothing to log at info level.
-                    }
+                    Ok(false) => {}
                     Err(e) => {
                         error!(issue = key, "pipeline advance error: {:#}", e);
-                        // The pipeline module is expected to have marked itself
-                        // as failed internally when it returns Err. We log the
-                        // failure here for visibility.
                         warn!(issue = key, "pipeline marked as failed");
                     }
                 }
             }
+            // Update dashboard after each pipeline advance
+            update_dashboard(&pipelines, &dashboard);
         }
 
         // 4. Remove completed (Done) pipelines.
@@ -211,13 +194,19 @@ async fn main() -> Result<()> {
             error!("failed to persist state: {:#}", e);
         }
 
-        // 6. Check for shutdown before sleeping.
+        // 6. Update dashboard
+        update_dashboard(&pipelines, &dashboard);
+
+        // 7. Check for shutdown before sleeping.
         if shutdown.load(Ordering::SeqCst) {
             info!("shutdown flag set, breaking out of main loop");
             break;
         }
 
-        info!(seconds = config.poll_interval, "sleeping until next poll cycle");
+        info!(
+            seconds = config.poll_interval,
+            "sleeping until next poll cycle"
+        );
         tokio::time::sleep(std::time::Duration::from_secs(config.poll_interval)).await;
     }
 
@@ -227,6 +216,99 @@ async fn main() -> Result<()> {
         error!("failed to persist state on shutdown: {:#}", e);
     }
 
-    info!("guild daemon shut down cleanly");
+    info!("guild daemon loop exited cleanly");
+}
+
+/// Sync pipeline state to the TUI dashboard.
+fn update_dashboard(
+    pipelines: &HashMap<u64, pipeline::Pipeline>,
+    dashboard: &Arc<Mutex<DashboardState>>,
+) {
+    if let Ok(mut state) = dashboard.lock() {
+        state.pipelines = pipelines.values().map(PipelineView::from).collect();
+        // Sort by issue number for stable display
+        state.pipelines.sort_by_key(|p| p.issue_number);
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // --- CLI / config ------------------------------------------------------
+    let cli = Cli::parse();
+    let config = Config::from_cli(&cli);
+
+    // --- ensure runs dir ---------------------------------------------------
+    std::fs::create_dir_all(&config.runs_dir).with_context(|| {
+        format!(
+            "failed to create runs directory at {}",
+            config.runs_dir.display()
+        )
+    })?;
+
+    // --- tracing to file instead of stdout ---------------------------------
+    let log_path = config.runs_dir.join("guild.log");
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .with_context(|| format!("failed to open log file at {}", log_path.display()))?;
+
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("guild=info")),
+        )
+        .with_writer(log_file)
+        .with_ansi(false)
+        .init();
+
+    info!("=======================================================");
+    info!("  Guild daemon starting");
+    info!("  repo           : {}", config.repo);
+    info!("  label          : {}", config.label);
+    info!("  poll_interval  : {}s", config.poll_interval);
+    info!("  copilot_cmd    : {}", config.copilot_cmd);
+    info!("  runs_dir       : {}", config.runs_dir.display());
+    info!("=======================================================");
+
+    // --- Display ASCII art banner ------------------------------------------
+    tui::display_banner();
+    eprintln!("  Starting Guild for {}...\n", config.repo);
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    // --- Shared state between daemon and TUI -------------------------------
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let dashboard = Arc::new(Mutex::new(DashboardState::new(
+        config.repo.clone(),
+        config.label.clone(),
+        config.poll_interval,
+    )));
+
+    // --- Spawn daemon poll loop as background task -------------------------
+    let daemon_config = config.clone();
+    let daemon_dashboard = Arc::clone(&dashboard);
+    let daemon_shutdown = Arc::clone(&shutdown);
+    let daemon_handle = tokio::spawn(async move {
+        run_daemon(daemon_config, daemon_dashboard, daemon_shutdown).await;
+    });
+
+    // --- Run TUI on main thread (needs terminal control) -------------------
+    let tui_shutdown = Arc::clone(&shutdown);
+    let tui_result = tui::run_tui(Arc::clone(&dashboard), tui_shutdown);
+
+    // Signal shutdown to daemon
+    shutdown.store(true, Ordering::SeqCst);
+
+    // Wait for daemon to finish (with timeout)
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), daemon_handle).await;
+
+    if let Err(e) = tui_result {
+        eprintln!("TUI error: {:#}", e);
+    }
+
+    eprintln!(
+        "\n  Guild shut down cleanly. Logs at: {}\n",
+        log_path.display()
+    );
     Ok(())
 }
