@@ -40,6 +40,23 @@ pub struct CommentAuthor {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PrComment {
+    pub author: CommentAuthor,
+    pub body: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Review {
+    pub author: CommentAuthor,
+    pub body: String,
+    pub state: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PrStatus {
     pub number: u64,
     pub state: String,
@@ -48,6 +65,10 @@ pub struct PrStatus {
     pub review_decision: String,
     #[serde(rename = "statusCheckRollup")]
     pub check_runs: Vec<CheckRun>,
+    #[serde(default)]
+    pub comments: Vec<PrComment>,
+    #[serde(default)]
+    pub reviews: Vec<Review>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -175,10 +196,29 @@ pub async fn create_branch(worktree: &Path, branch: &str) -> Result<()> {
 }
 
 /// Stage everything and commit with the given message.
+/// Returns Ok(()) even if there is nothing to commit.
 pub async fn commit_all(worktree: &Path, message: &str) -> Result<()> {
     run_git(&["add", "-A"], worktree)
         .await
         .context("commit_all: git add")?;
+
+    // Check if there is anything to commit (git diff --cached --quiet exits 1 if there are changes).
+    let has_changes = Command::new("git")
+        .args(&["diff", "--cached", "--quiet"])
+        .current_dir(worktree)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .context("commit_all: failed to spawn git diff")?
+        .wait()
+        .await
+        .context("commit_all: failed to wait on git diff")?;
+
+    if has_changes.success() {
+        // Exit 0 means no changes staged — nothing to commit.
+        tracing::info!("nothing to commit, skipping");
+        return Ok(());
+    }
 
     run_git(&["commit", "-m", message], worktree)
         .await
@@ -203,7 +243,8 @@ pub async fn create_draft_pr(
     title: &str,
     body: &str,
 ) -> Result<u64> {
-    let json = run_gh(&[
+    // gh pr create prints the PR URL to stdout (e.g. https://github.com/owner/repo/pull/42)
+    let url = run_gh(&[
         "pr", "create",
         "--repo", repo,
         "--base", base,
@@ -211,19 +252,20 @@ pub async fn create_draft_pr(
         "--title", title,
         "--body", body,
         "--draft",
-        "--json", "number",
     ])
     .await
     .context("create_draft_pr")?;
 
-    #[derive(Deserialize)]
-    struct PrCreated {
-        number: u64,
-    }
+    // Parse the PR number from the URL: last path segment.
+    let url = url.trim();
+    let pr_number: u64 = url
+        .rsplit('/')
+        .next()
+        .context("create_draft_pr: no PR number in URL")?
+        .parse()
+        .with_context(|| format!("create_draft_pr: failed to parse PR number from: {}", url))?;
 
-    let created: PrCreated =
-        serde_json::from_str(&json).context("failed to parse PR creation JSON")?;
-    Ok(created.number)
+    Ok(pr_number)
 }
 
 /// Fetch the current status of a pull request (checks, review, mergeable).
@@ -232,7 +274,7 @@ pub async fn fetch_pr_status(repo: &str, pr_number: u64) -> Result<PrStatus> {
     let json = run_gh(&[
         "pr", "view", &number_str,
         "--repo", repo,
-        "--json", "number,state,mergeable,reviewDecision,statusCheckRollup",
+        "--json", "number,state,mergeable,reviewDecision,statusCheckRollup,comments,reviews",
     ])
     .await
     .context("fetch_pr_status")?;

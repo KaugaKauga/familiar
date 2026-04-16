@@ -377,7 +377,27 @@ impl Pipeline {
             .filter(|c| c.status == "completed" && c.conclusion != Some("success".to_string()))
             .collect();
 
-        // Build fingerprint from failed checks + review decision + mergeable.
+        // Collect @guild-mentioned comments (regular PR comments that summon the agent).
+        let guild_comments: Vec<&github::PrComment> = status
+            .comments
+            .iter()
+            .filter(|c| {
+                let login = &c.author.login;
+                let is_human = !login.ends_with("[bot]") && login != "github-actions";
+                is_human && c.body.contains("@guild")
+            })
+            .collect();
+
+        // Collect formal review bodies when changes are requested.
+        let review_comments: Vec<&github::Review> = if status.review_decision == "CHANGES_REQUESTED" {
+            status.reviews.iter()
+                .filter(|r| r.state == "CHANGES_REQUESTED")
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        // Build fingerprint from all actionable signals.
         let mut fingerprint_input = String::new();
         for c in &failed_checks {
             fingerprint_input.push_str(&c.name);
@@ -386,19 +406,34 @@ impl Pipeline {
         fingerprint_input.push_str(&status.review_decision);
         fingerprint_input.push(';');
         fingerprint_input.push_str(&status.mergeable);
+        fingerprint_input.push(';');
+        for c in &guild_comments {
+            fingerprint_input.push_str(&c.author.login);
+            fingerprint_input.push(':');
+            fingerprint_input.push_str(&c.body);
+            fingerprint_input.push(';');
+        }
+        for r in &review_comments {
+            fingerprint_input.push_str(&r.author.login);
+            fingerprint_input.push(':');
+            fingerprint_input.push_str(&r.body);
+            fingerprint_input.push(';');
+        }
 
         let mut hasher = Sha256::new();
         hasher.update(fingerprint_input.as_bytes());
         let fingerprint = hex::encode(hasher.finalize());
 
-        // Check if everything is green.
+        // Done condition: all checks green, review approved (or none), state open,
+        // and no @guild comments or change-request reviews pending.
         let all_checks_pass = failed_checks.is_empty();
         let review_ok =
             status.review_decision == "APPROVED" || status.review_decision.is_empty();
         let state_ok = status.state == "OPEN" || status.state == "open";
+        let no_actionable = guild_comments.is_empty() && review_comments.is_empty();
 
-        if all_checks_pass && review_ok && state_ok {
-            info!("PR #{} is green! Marking done.", pr_number);
+        if all_checks_pass && review_ok && state_ok && no_actionable {
+            info!("PR #{} is green with no actionable feedback! Marking done.", pr_number);
             self.stage = Stage::Done;
             return Ok(true);
         }
@@ -414,6 +449,7 @@ impl Pipeline {
 
             // Write blocker report.
             let mut report = String::from("# Blocker Report\n\n");
+
             report.push_str("## Failed Checks\n");
             if failed_checks.is_empty() {
                 report.push_str("- (none)\n");
@@ -423,6 +459,7 @@ impl Pipeline {
                     report.push_str(&format!("- **{}**: {}\n", c.name, conclusion));
                 }
             }
+
             report.push_str(&format!(
                 "\n## Review Decision\n{}\n",
                 if status.review_decision.is_empty() {
@@ -432,6 +469,26 @@ impl Pipeline {
                 },
             ));
             report.push_str(&format!("\n## Mergeable State\n{}\n", status.mergeable));
+
+            if !review_comments.is_empty() {
+                report.push_str("\n## Review Comments (changes requested)\n");
+                for r in &review_comments {
+                    report.push_str(&format!(
+                        "\n### @{} ({}) — {}\n{}\n",
+                        r.author.login, r.created_at, r.state, r.body
+                    ));
+                }
+            }
+
+            if !guild_comments.is_empty() {
+                report.push_str("\n## @guild Mentions\n");
+                for c in &guild_comments {
+                    report.push_str(&format!(
+                        "\n### @{} ({})\n{}\n",
+                        c.author.login, c.created_at, c.body
+                    ));
+                }
+            }
 
             fs::write(self.run_dir.join("blocker_report.md"), &report)
                 .context("Watch: failed to write blocker_report.md")?;
