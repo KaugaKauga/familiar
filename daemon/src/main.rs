@@ -37,7 +37,7 @@ struct Cli {
     runs_dir: String,
 
     /// Maximum number of pipelines to advance concurrently
-    #[arg(short = 'c', long, default_value_t = 3)]
+    #[arg(short = 'c', long, default_value_t = 5)]
     max_concurrent: usize,
 }
 
@@ -66,13 +66,10 @@ impl Config {
 }
 
 /// Persist the current pipelines map to state.json inside runs_dir.
-fn persist_state(
-    pipelines: &HashMap<u64, pipeline::Pipeline>,
-    runs_dir: &Path,
-) -> Result<()> {
+fn persist_state(pipelines: &HashMap<u64, pipeline::Pipeline>, runs_dir: &Path) -> Result<()> {
     let state_path = runs_dir.join("state.json");
-    let json = serde_json::to_string_pretty(pipelines)
-        .context("failed to serialize pipeline state")?;
+    let json =
+        serde_json::to_string_pretty(pipelines).context("failed to serialize pipeline state")?;
     std::fs::write(&state_path, json)
         .with_context(|| format!("failed to write state file at {}", state_path.display()))?;
     info!(path = %state_path.display(), "persisted pipeline state");
@@ -89,8 +86,13 @@ fn load_state(runs_dir: &Path) -> Result<HashMap<u64, pipeline::Pipeline>> {
     }
     let data = std::fs::read_to_string(&state_path)
         .with_context(|| format!("failed to read state file at {}", state_path.display()))?;
-    let pipelines: HashMap<u64, pipeline::Pipeline> = serde_json::from_str(&data)
-        .with_context(|| format!("failed to deserialize state file at {}", state_path.display()))?;
+    let pipelines: HashMap<u64, pipeline::Pipeline> =
+        serde_json::from_str(&data).with_context(|| {
+            format!(
+                "failed to deserialize state file at {}",
+                state_path.display()
+            )
+        })?;
     info!(
         count = pipelines.len(),
         path = %state_path.display(),
@@ -168,12 +170,12 @@ async fn main() -> Result<()> {
         // 2. Create new pipelines for issues we have not seen yet.
         for issue in &issues {
             if !pipelines.contains_key(&issue.number) {
-                info!(issue = issue.number, "new issue detected, creating pipeline");
-                let p = pipeline::Pipeline::new(
-                    issue.number,
-                    config.repo.clone(),
-                    &config.runs_dir,
+                info!(
+                    issue = issue.number,
+                    "new issue detected, creating pipeline"
                 );
+                let p =
+                    pipeline::Pipeline::new(issue.number, config.repo.clone(), &config.runs_dir);
                 pipelines.insert(issue.number, p);
             }
         }
@@ -240,7 +242,10 @@ async fn main() -> Result<()> {
             break;
         }
 
-        info!(seconds = config.poll_interval, "sleeping until next poll cycle");
+        info!(
+            seconds = config.poll_interval,
+            "sleeping until next poll cycle"
+        );
         tokio::time::sleep(std::time::Duration::from_secs(config.poll_interval)).await;
     }
 
