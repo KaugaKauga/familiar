@@ -149,6 +149,26 @@ impl Pipeline {
         matches!(self.stage, Stage::Failed(_))
     }
 
+    /// Remove the worktree directory to reclaim disk space.
+    /// Called after a pipeline is completed or removed.
+    /// Idempotent: does nothing if the directory doesn't exist.
+    pub fn cleanup_worktree(&self) {
+        if self.worktree.exists() {
+            match fs::remove_dir_all(&self.worktree) {
+                Ok(()) => info!(
+                    issue = self.issue_number,
+                    path = %self.worktree.display(),
+                    "cleaned up worktree"
+                ),
+                Err(e) => tracing::warn!(
+                    issue = self.issue_number,
+                    path = %self.worktree.display(),
+                    "failed to clean up worktree: {:#}", e
+                ),
+            }
+        }
+    }
+
     // ------------------------------------------------------------------
     // Stage implementations
     // ------------------------------------------------------------------

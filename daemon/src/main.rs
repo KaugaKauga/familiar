@@ -324,6 +324,7 @@ async fn run_start(config: Config, no_tui: bool) -> Result<()> {
                     error!(issue = issue_number, "failed to complete pipeline: {:#}", e);
                 } else {
                     info!(issue = issue_number, "completed pipeline moved to ledger");
+                    p.cleanup_worktree();
                     housekeeping_keys.push(issue_number);
                 }
             } else if p.is_failed() && !active_on_github.contains(&issue_number) {
@@ -334,6 +335,7 @@ async fn run_start(config: Config, no_tui: bool) -> Result<()> {
                 if let Err(e) = db.remove_pipeline(issue_number) {
                     error!(issue = issue_number, "failed to remove pipeline: {:#}", e);
                 } else {
+                    p.cleanup_worktree();
                     housekeeping_keys.push(issue_number);
                 }
             }
@@ -450,6 +452,8 @@ async fn run_start(config: Config, no_tui: bool) -> Result<()> {
                         info!(issue = key, "pipeline completed, recording in ledger");
                         if let Err(e) = db.complete_pipeline(&pipeline) {
                             error!(issue = key, "failed to complete pipeline: {:#}", e);
+                        } else {
+                            pipeline.cleanup_worktree();
                         }
                     }
                 }
