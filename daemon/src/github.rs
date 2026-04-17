@@ -216,13 +216,36 @@ pub async fn clone_repo(repo: &str, dest: &Path) -> Result<()> {
 /// branch that already exists on origin, which would later cause a push
 /// rejection.
 pub async fn checkout_or_create_branch(worktree: &Path, branch: &str) -> Result<()> {
-    // Try to fetch the branch from origin.
-    let fetch_result = run_git(&["fetch", "origin", branch], worktree).await;
+    // 1. Check if we are already on the target branch.
+    if let Ok(current) = run_git(&["rev-parse", "--abbrev-ref", "HEAD"], worktree).await {
+        if current.trim() == branch {
+            tracing::info!("already on branch: {}", branch);
+            return Ok(());
+        }
+    }
+
+    // 2. Check if the branch exists locally.
+    let ref_spec = format!("refs/heads/{}", branch);
+    if run_git(&["rev-parse", "--verify", &ref_spec], worktree)
+        .await
+        .is_ok()
+    {
+        run_git(&["checkout", branch], worktree)
+            .await
+            .context("checkout_or_create_branch: failed to checkout existing local branch")?;
+        tracing::info!("checked out existing local branch: {}", branch);
+        return Ok(());
+    }
+
+    // 3. Try to fetch from origin (with depth=1 to handle shallow clones).
+    let fetch_result = run_git(&["fetch", "--depth=1", "origin", branch], worktree).await;
 
     if fetch_result.is_ok() {
-        // Branch exists on remote — check it out tracking the remote.
+        // Branch exists on remote — check it out. Use FETCH_HEAD which is
+        // always valid after a successful fetch, even in shallow clones where
+        // origin/<branch> may not resolve as a commit.
         run_git(
-            &["checkout", "-b", branch, &format!("origin/{}", branch)],
+            &["checkout", "-b", branch, "FETCH_HEAD"],
             worktree,
         )
         .await
@@ -272,13 +295,36 @@ pub async fn commit_all(worktree: &Path, message: &str) -> Result<()> {
 }
 
 /// Push  to origin, setting upstream tracking.
+///
+/// Fetches the remote branch first so that `--force-with-lease` has accurate
+/// tracking info (shallow clones and FETCH_HEAD checkouts often leave it stale).
 pub async fn push_branch(worktree: &Path, branch: &str) -> Result<()> {
-    run_git(
+    // Refresh remote tracking info so --force-with-lease has accurate state.
+    let _ = run_git(&["fetch", "origin", branch], worktree).await;
+
+    // Try --force-with-lease first (safe default). If it fails due to stale
+    // tracking info (common with shallow clones), fall back to --force.
+    // This is safe because guild owns these branches exclusively.
+    let result = run_git(
         &["push", "--force-with-lease", "-u", "origin", branch],
         worktree,
     )
+    .await;
+
+    if result.is_ok() {
+        return Ok(());
+    }
+
+    tracing::warn!(
+        "--force-with-lease rejected push for {}, retrying with --force",
+        branch
+    );
+    run_git(
+        &["push", "--force", "-u", "origin", branch],
+        worktree,
+    )
     .await
-    .context("push_branch")?;
+    .context("push_branch (force)")?;
     Ok(())
 }
 
@@ -329,6 +375,33 @@ pub async fn find_pr_for_branch(repo: &str, branch: &str) -> Result<Option<u64>>
         Ok(Some(number))
     } else {
         Ok(None)
+    }
+}
+
+/// Delete a remote branch (best-effort).
+///
+/// Used to clean up `guild/issue-*` branches after a PR is merged.
+/// Errors are logged but not propagated -- the branch may already have been
+/// deleted by GitHub's auto-delete-on-merge setting.
+pub async fn delete_remote_branch(repo: &str, branch: &str) {
+    // We need a local clone to run `git push --delete`. Instead, use `gh api`
+    // to delete the ref via the GitHub API, which doesn't need a local checkout.
+    let git_ref = format!("heads/{}", branch);
+    let result = run_gh(&[
+        "api",
+        "--method",
+        "DELETE",
+        &format!("repos/{}/git/refs/{}", repo, git_ref),
+    ])
+    .await;
+
+    match result {
+        Ok(_) => {
+            tracing::info!(repo, branch, "deleted remote branch");
+        }
+        Err(e) => {
+            tracing::debug!(repo, branch, "could not delete remote branch (may already be gone): {:#}", e);
+        }
     }
 }
 

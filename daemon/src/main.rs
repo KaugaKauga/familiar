@@ -227,6 +227,11 @@ async fn run_start(config: Config, no_tui: bool) -> Result<()> {
     info!(active = existing.len(), "active pipelines in database");
     drop(existing);
 
+    // --- clean up orphaned run directories --------------------------------
+    // Scan runs_dir for subdirectories not tracked by any active or completed
+    // pipeline.  These may have been left behind by crashes or interrupted runs.
+    cleanup_orphan_run_dirs(&config.runs_dir, &db);
+
     // --- graceful shutdown flag --------------------------------------------
     let shutdown = Arc::new(AtomicBool::new(false));
 
@@ -324,6 +329,7 @@ async fn run_start(config: Config, no_tui: bool) -> Result<()> {
                     error!(issue = issue_number, "failed to complete pipeline: {:#}", e);
                 } else {
                     info!(issue = issue_number, "completed pipeline moved to ledger");
+                    p.cleanup_run();
                     housekeeping_keys.push(issue_number);
                 }
             } else if p.is_failed() && !active_on_github.contains(&issue_number) {
@@ -450,6 +456,10 @@ async fn run_start(config: Config, no_tui: bool) -> Result<()> {
                         info!(issue = key, "pipeline completed, recording in ledger");
                         if let Err(e) = db.complete_pipeline(&pipeline) {
                             error!(issue = key, "failed to complete pipeline: {:#}", e);
+                        } else {
+                            // Clean up local run directory and remote branch.
+                            github::delete_remote_branch(&pipeline.repo, &pipeline.branch_name).await;
+                            pipeline.cleanup_run();
                         }
                     }
                 }
@@ -493,4 +503,73 @@ async fn run_start(config: Config, no_tui: bool) -> Result<()> {
 
     info!("guild daemon shut down cleanly");
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Orphan run directory cleanup
+// ---------------------------------------------------------------------------
+
+/// Remove run directories inside `runs_dir` that are not referenced by any
+/// active or completed pipeline in the database.
+///
+/// Skips files (e.g. guild.db, guild.log) and only considers directories whose
+/// names look like guild run dirs (contain a `-` to match the timestamp-slug
+/// pattern).
+fn cleanup_orphan_run_dirs(runs_dir: &std::path::Path, db: &db::Db) {
+    let tracked = match db.all_tracked_run_dirs() {
+        Ok(t) => t,
+        Err(e) => {
+            error!("failed to query tracked run dirs, skipping orphan cleanup: {:#}", e);
+            return;
+        }
+    };
+
+    let entries = match std::fs::read_dir(runs_dir) {
+        Ok(e) => e,
+        Err(e) => {
+            error!("failed to read runs_dir for orphan cleanup: {:#}", e);
+            return;
+        }
+    };
+
+    let mut removed = 0u64;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let dir_name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n,
+            None => continue,
+        };
+
+        // Only consider directories that look like run dirs (timestamp-slug pattern).
+        if !dir_name.contains('-') {
+            continue;
+        }
+
+        // Check if this directory is tracked (by absolute or relative path).
+        let abs_str = path.to_string_lossy().to_string();
+        let is_tracked = tracked.contains(&abs_str)
+            || tracked.iter().any(|t| {
+                // The DB may store relative or absolute paths; check if either
+                // matches the directory.
+                let t_path = std::path::Path::new(t);
+                t_path == path || t_path.file_name() == path.file_name()
+            });
+
+        if !is_tracked {
+            info!(path = %path.display(), "removing orphaned run directory");
+            if let Err(e) = std::fs::remove_dir_all(&path) {
+                error!(path = %path.display(), "failed to remove orphan dir: {:#}", e);
+            } else {
+                removed += 1;
+            }
+        }
+    }
+
+    if removed > 0 {
+        info!(count = removed, "cleaned up orphaned run directories");
+    }
 }

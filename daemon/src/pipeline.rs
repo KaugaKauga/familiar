@@ -149,6 +149,46 @@ impl Pipeline {
         matches!(self.stage, Stage::Failed(_))
     }
 
+    /// Remove the worktree and the entire run directory.
+    ///
+    /// Called after the pipeline has been recorded in the completed ledger.
+    /// Errors are logged but not propagated -- cleanup is best-effort.
+    pub fn cleanup_run(&self) {
+        // Remove worktree first (may be a large clone).
+        if self.worktree.exists() {
+            if let Err(e) = fs::remove_dir_all(&self.worktree) {
+                tracing::warn!(
+                    issue = self.issue_number,
+                    path = %self.worktree.display(),
+                    "failed to remove worktree: {:#}", e
+                );
+            } else {
+                info!(
+                    issue = self.issue_number,
+                    path = %self.worktree.display(),
+                    "removed worktree"
+                );
+            }
+        }
+
+        // Remove the entire run_dir (issue.json, prompts, reports, etc.).
+        if self.run_dir.exists() {
+            if let Err(e) = fs::remove_dir_all(&self.run_dir) {
+                tracing::warn!(
+                    issue = self.issue_number,
+                    path = %self.run_dir.display(),
+                    "failed to remove run_dir: {:#}", e
+                );
+            } else {
+                info!(
+                    issue = self.issue_number,
+                    path = %self.run_dir.display(),
+                    "removed run_dir"
+                );
+            }
+        }
+    }
+
     // ------------------------------------------------------------------
     // Stage implementations
     // ------------------------------------------------------------------
@@ -184,6 +224,13 @@ impl Pipeline {
     }
 
     async fn do_understand(&mut self) -> Result<bool> {
+        // Clean up stale git lock files that may have been left by a killed process.
+        let git_lock = self.worktree.join(".git/index.lock");
+        if git_lock.exists() {
+            info!("removing stale git lock file: {}", git_lock.display());
+            let _ = fs::remove_file(&git_lock);
+        }
+
         // Clone repo into worktree if it doesn't already exist.
         if !self.worktree.exists() {
             github::clone_repo(&self.repo, &self.worktree)
@@ -404,6 +451,13 @@ impl Pipeline {
     }
 
     async fn do_submit(&mut self) -> Result<bool> {
+        // Clean up stale git lock file from a potentially killed process.
+        let git_lock = self.worktree.join(".git/index.lock");
+        if git_lock.exists() {
+            info!("removing stale git lock file: {}", git_lock.display());
+            let _ = fs::remove_file(&git_lock);
+        }
+
         let commit_msg = format!("guild: implement issue #{}", self.issue_number);
 
         github::commit_all(&self.worktree, &commit_msg)
@@ -529,19 +583,22 @@ impl Pipeline {
         hasher.update(fingerprint_input.as_bytes());
         let fingerprint = hex::encode(hasher.finalize());
 
-        // Done condition: all checks green, review approved (or none), state open,
-        // and no @guild comments or change-request reviews pending.
-        let all_checks_pass = failed_checks.is_empty();
-        let review_ok = status.review_decision == "APPROVED" || status.review_decision.is_empty();
-        let state_ok = status.state == "OPEN" || status.state == "open";
-        let no_actionable = guild_comments.is_empty() && review_comments.is_empty();
+        // Done condition: the PR has been merged.
+        // We never mark Done just because checks are green -- the pipeline keeps
+        // watching until a human merges (or closes) the PR.
+        let pr_state = status.state.to_uppercase();
 
-        if all_checks_pass && review_ok && state_ok && no_actionable {
-            info!(
-                "PR #{} is green with no actionable feedback! Marking done.",
-                pr_number
-            );
+        if pr_state == "MERGED" {
+            info!("PR #{} has been merged! Pipeline complete.", pr_number);
             self.stage = Stage::Done;
+            return Ok(true);
+        }
+
+        // If the PR was closed without merging, mark the pipeline as failed
+        // so it stops polling but can be investigated.
+        if pr_state == "CLOSED" {
+            info!("PR #{} was closed without merging. Marking failed.", pr_number);
+            self.stage = Stage::Failed("PR closed without merging".to_string());
             return Ok(true);
         }
 
@@ -610,6 +667,13 @@ impl Pipeline {
     }
 
     async fn do_fix(&mut self, config: &Config) -> Result<bool> {
+        // Clean up stale git lock file from a potentially killed process.
+        let git_lock = self.worktree.join(".git/index.lock");
+        if git_lock.exists() {
+            info!("removing stale git lock file: {}", git_lock.display());
+            let _ = fs::remove_file(&git_lock);
+        }
+
         let blocker_report = read_file_or(
             &self.run_dir.join("blocker_report.md"),
             "(no blocker report)",

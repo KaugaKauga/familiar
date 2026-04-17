@@ -258,6 +258,37 @@ impl Db {
         Ok(())
     }
 
+    /// Return the set of run_dir paths that are tracked by either the active
+    /// pipelines table or the completed ledger.
+    pub fn all_tracked_run_dirs(&self) -> Result<std::collections::HashSet<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut set = std::collections::HashSet::new();
+
+        let mut stmt = conn
+            .prepare("SELECT run_dir FROM pipelines")
+            .context("failed to query active run_dirs")?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))?;
+        for row in rows {
+            if let Ok(dir) = row {
+                set.insert(dir);
+            }
+        }
+
+        let mut stmt = conn
+            .prepare("SELECT run_dir FROM completed")
+            .context("failed to query completed run_dirs")?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))?;
+        for row in rows {
+            if let Ok(dir) = row {
+                set.insert(dir);
+            }
+        }
+
+        Ok(set)
+    }
+
     /// One-time migration from the legacy state.json file.
     ///
     /// If state.json exists in runs_dir, its pipelines are imported into the
