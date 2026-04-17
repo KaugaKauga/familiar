@@ -28,6 +28,47 @@ pub enum Stage {
     Failed(String),
 }
 
+impl Stage {
+    /// Position of this stage in the pipeline (0-based ordinal for progress).
+    /// Failed maps to 0 since it can happen at any point.
+    pub fn ordinal(&self) -> u8 {
+        match self {
+            Stage::Ingest => 1,
+            Stage::Understand => 2,
+            Stage::Plan => 3,
+            Stage::Implement => 4,
+            Stage::Verify => 5,
+            Stage::Submit => 6,
+            Stage::Watch => 7,
+            Stage::Fix => 5, // fix loops back to roughly verify-level
+            Stage::Done => 8,
+            Stage::Failed(_) => 0,
+        }
+    }
+
+    /// Total number of stages for progress bar calculation.
+    pub fn total_stages() -> u8 {
+        8
+    }
+}
+
+impl std::fmt::Display for Stage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Stage::Ingest => write!(f, "Ingest"),
+            Stage::Understand => write!(f, "Understand"),
+            Stage::Plan => write!(f, "Plan"),
+            Stage::Implement => write!(f, "Implement"),
+            Stage::Verify => write!(f, "Verify"),
+            Stage::Submit => write!(f, "Submit"),
+            Stage::Watch => write!(f, "Watch"),
+            Stage::Fix => write!(f, "Fix"),
+            Stage::Done => write!(f, "Done"),
+            Stage::Failed(msg) => write!(f, "Failed: {}", msg),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Pipeline
 // ---------------------------------------------------------------------------
