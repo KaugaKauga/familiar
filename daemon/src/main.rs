@@ -160,6 +160,20 @@ fn run_status(runs_dir: &str) -> Result<()> {
 // `guild start` — main daemon with TUI
 // ---------------------------------------------------------------------------
 
+/// Generate a brief status description for the TUI based on the pipeline stage.
+fn stage_status_text(stage: &pipeline::Stage) -> String {
+    use pipeline::Stage;
+    match stage {
+        Stage::Plan | Stage::Implement | Stage::Verify | Stage::Fix => "copilot running…".into(),
+        Stage::Ingest => "fetching issue…".into(),
+        Stage::Understand => "analyzing…".into(),
+        Stage::Submit => "pushing PR…".into(),
+        Stage::Watch => "watching CI…".into(),
+        Stage::Done => "complete".into(),
+        Stage::Failed(_) => "failed".into(),
+    }
+}
+
 async fn run_start(config: Config, no_tui: bool) -> Result<()> {
     // --- ensure runs dir ---------------------------------------------------
     std::fs::create_dir_all(&config.runs_dir).with_context(|| {
@@ -358,6 +372,7 @@ async fn run_start(config: Config, no_tui: bool) -> Result<()> {
                     stage: p.stage.clone(),
                     branch_name: p.branch_name.clone(),
                     pr_number: p.pr_number,
+                    status_text: stage_status_text(&p.stage),
                 })
                 .collect(),
             last_poll: Some(now),
@@ -410,12 +425,14 @@ async fn run_start(config: Config, no_tui: bool) -> Result<()> {
                                 {
                                     snap.stage = pipeline.stage.clone();
                                     snap.pr_number = pipeline.pr_number;
+                                    snap.status_text = stage_status_text(&pipeline.stage);
                                 } else {
                                     current.pipelines.push(PipelineSnapshot {
                                         issue_number: pipeline.issue_number,
                                         stage: pipeline.stage.clone(),
                                         branch_name: pipeline.branch_name.clone(),
                                         pr_number: pipeline.pr_number,
+                                        status_text: stage_status_text(&pipeline.stage),
                                     });
                                 }
                                 let _ = state_tx_inner.send(current);
@@ -458,7 +475,8 @@ async fn run_start(config: Config, no_tui: bool) -> Result<()> {
                             error!(issue = key, "failed to complete pipeline: {:#}", e);
                         } else {
                             // Clean up local run directory and remote branch.
-                            github::delete_remote_branch(&pipeline.repo, &pipeline.branch_name).await;
+                            github::delete_remote_branch(&pipeline.repo, &pipeline.branch_name)
+                                .await;
                             pipeline.cleanup_run();
                         }
                     }
@@ -479,6 +497,7 @@ async fn run_start(config: Config, no_tui: bool) -> Result<()> {
                         stage: p.stage.clone(),
                         branch_name: p.branch_name.clone(),
                         pr_number: p.pr_number,
+                        status_text: stage_status_text(&p.stage),
                     })
                     .collect(),
                 last_poll: Some(chrono::Utc::now()),
@@ -519,7 +538,10 @@ fn cleanup_orphan_run_dirs(runs_dir: &std::path::Path, db: &db::Db) {
     let tracked = match db.all_tracked_run_dirs() {
         Ok(t) => t,
         Err(e) => {
-            error!("failed to query tracked run dirs, skipping orphan cleanup: {:#}", e);
+            error!(
+                "failed to query tracked run dirs, skipping orphan cleanup: {:#}",
+                e
+            );
             return;
         }
     };

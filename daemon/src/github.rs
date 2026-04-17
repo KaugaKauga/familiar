@@ -244,12 +244,9 @@ pub async fn checkout_or_create_branch(worktree: &Path, branch: &str) -> Result<
         // Branch exists on remote — check it out. Use FETCH_HEAD which is
         // always valid after a successful fetch, even in shallow clones where
         // origin/<branch> may not resolve as a commit.
-        run_git(
-            &["checkout", "-b", branch, "FETCH_HEAD"],
-            worktree,
-        )
-        .await
-        .context("checkout_or_create_branch: failed to checkout existing remote branch")?;
+        run_git(&["checkout", "-b", branch, "FETCH_HEAD"], worktree)
+            .await
+            .context("checkout_or_create_branch: failed to checkout existing remote branch")?;
         tracing::info!("checked out existing remote branch: {}", branch);
     } else {
         // Branch does not exist on remote — create a new one.
@@ -319,12 +316,9 @@ pub async fn push_branch(worktree: &Path, branch: &str) -> Result<()> {
         "--force-with-lease rejected push for {}, retrying with --force",
         branch
     );
-    run_git(
-        &["push", "--force", "-u", "origin", branch],
-        worktree,
-    )
-    .await
-    .context("push_branch (force)")?;
+    run_git(&["push", "--force", "-u", "origin", branch], worktree)
+        .await
+        .context("push_branch (force)")?;
     Ok(())
 }
 
@@ -400,7 +394,12 @@ pub async fn delete_remote_branch(repo: &str, branch: &str) {
             tracing::info!(repo, branch, "deleted remote branch");
         }
         Err(e) => {
-            tracing::debug!(repo, branch, "could not delete remote branch (may already be gone): {:#}", e);
+            tracing::debug!(
+                repo,
+                branch,
+                "could not delete remote branch (may already be gone): {:#}",
+                e
+            );
         }
     }
 }

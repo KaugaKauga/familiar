@@ -13,11 +13,13 @@
 //! All intelligence lives in the copilot process itself. This module is
 //! intentionally thin glue.
 
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::process::Stdio;
 
 use anyhow::{bail, Context, Result};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// Run the copilot CLI with the given prompt file in the given working directory.
 ///
@@ -25,23 +27,55 @@ use tracing::{error, info};
 /// full permissions:
 ///   copilot -p <content> --yolo --no-ask-user
 ///
-/// stdout and stderr are inherited so copilot output streams to our terminal.
+/// Output is redirected to log files under `run_dir` to avoid corrupting the
+/// TUI dashboard. Log files are named after the prompt file stem, e.g.
+/// `copilot_plan.log` for `prompt_plan.md`.
+///
 /// stdin is nulled out -- no interactive input.
 pub async fn run_copilot(
     copilot_cmd: &str,
     model: &str,
     prompt_file: &Path,
     work_dir: &Path,
+    run_dir: &Path,
 ) -> Result<()> {
     // Read the prompt file content to pass via -p.
     let content = tokio::fs::read_to_string(prompt_file)
         .await
         .with_context(|| format!("failed to read prompt file: {}", prompt_file.display()))?;
 
+    // Derive log file name from prompt file stem (e.g. prompt_plan -> copilot_plan.log).
+    let stage_name = prompt_file
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("copilot")
+        .strip_prefix("prompt_")
+        .unwrap_or("unknown");
+    let log_name = format!("copilot_{stage_name}.log");
+    let log_path = run_dir.join(&log_name);
+
+    // Open a log file for stdout/stderr. Fall back to Stdio::null() on failure.
+    let (stdout_cfg, stderr_cfg) = match File::create(&log_path) {
+        Ok(out_file) => {
+            let err_file = out_file
+                .try_clone()
+                .context("failed to clone log file handle for stderr")?;
+            (Stdio::from(out_file), Stdio::from(err_file))
+        }
+        Err(e) => {
+            warn!(
+                path = %log_path.display(),
+                "failed to create copilot log file, output will be discarded: {}", e
+            );
+            (Stdio::null(), Stdio::null())
+        }
+    };
+
     info!(
         cmd = copilot_cmd,
         prompt = %prompt_file.display(),
         dir = %work_dir.display(),
+        log = %log_path.display(),
         "spawning copilot (non-interactive, yolo)"
     );
 
@@ -53,8 +87,8 @@ pub async fn run_copilot(
         .arg("--yolo")
         .arg("--no-ask-user")
         .current_dir(work_dir)
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stdout(stdout_cfg)
+        .stderr(stderr_cfg)
         .stdin(Stdio::null())
         .spawn();
 
@@ -80,7 +114,36 @@ pub async fn run_copilot(
         Ok(())
     } else {
         let code = status.code().unwrap_or(-1);
-        error!(code, "copilot exited with non-zero status");
-        bail!("copilot exited with code {}", code)
+        error!(code, log = %log_path.display(), "copilot exited with non-zero status");
+
+        // Include the tail of the log file in the error for debugging.
+        let tail = read_tail(&log_path, 20);
+        bail!(
+            "copilot exited with code {} — see {}\n\n--- last lines ---\n{}",
+            code,
+            log_path.display(),
+            tail
+        )
     }
+}
+
+/// Read the last `n` lines from a file, returning them as a single string.
+/// Returns an empty string on any I/O error.
+fn read_tail(path: &Path, n: usize) -> String {
+    let Ok(mut file) = File::open(path) else {
+        return String::new();
+    };
+    let Ok(len) = file.seek(SeekFrom::End(0)) else {
+        return String::new();
+    };
+    // Read at most the last 8 KiB.
+    let read_from = len.saturating_sub(8192);
+    let _ = file.seek(SeekFrom::Start(read_from));
+    let mut buf = String::new();
+    if file.read_to_string(&mut buf).is_err() {
+        return String::new();
+    }
+    let lines: Vec<&str> = buf.lines().collect();
+    let start = lines.len().saturating_sub(n);
+    lines[start..].join("\n")
 }

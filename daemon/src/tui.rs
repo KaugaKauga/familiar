@@ -34,6 +34,8 @@ pub struct PipelineSnapshot {
     pub stage: Stage,
     pub branch_name: String,
     pub pr_number: Option<u64>,
+    /// Brief status text shown in the TUI (e.g. "copilot running…").
+    pub status_text: String,
 }
 
 /// Full daemon state sent to the TUI on each cycle.
@@ -199,13 +201,15 @@ fn render_pipeline_table(
         return;
     }
 
-    let header_cells = ["#", "Stage", "Progress", "Branch", "PR"].iter().map(|h| {
-        Cell::from(*h).style(
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        )
-    });
+    let header_cells = ["#", "Stage", "Progress", "Status", "Branch", "PR"]
+        .iter()
+        .map(|h| {
+            Cell::from(*h).style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
+        });
     let header = Row::new(header_cells).height(1);
 
     let visible_pipelines: Vec<_> = state.pipelines.iter().skip(scroll_offset).collect();
@@ -224,6 +228,7 @@ fn render_pipeline_table(
             Cell::from(format!("#{}", p.issue_number)).style(Style::default().fg(Color::White)),
             Cell::from(stage_name).style(Style::default().fg(stage_color)),
             Cell::from(progress_bar),
+            Cell::from(p.status_text.clone()).style(Style::default().fg(Color::DarkGray)),
             Cell::from(p.branch_name.clone()).style(Style::default().fg(Color::Blue)),
             Cell::from(pr_text).style(Style::default().fg(Color::Magenta)),
         ])
@@ -235,6 +240,7 @@ fn render_pipeline_table(
             Constraint::Length(8),
             Constraint::Length(14),
             Constraint::Length(22),
+            Constraint::Length(20),
             Constraint::Min(20),
             Constraint::Length(8),
         ],
