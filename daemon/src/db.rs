@@ -267,23 +267,17 @@ impl Db {
         let mut stmt = conn
             .prepare("SELECT run_dir FROM pipelines")
             .context("failed to query active run_dirs")?;
-        let rows = stmt
-            .query_map([], |row| row.get::<_, String>(0))?;
-        for row in rows {
-            if let Ok(dir) = row {
-                set.insert(dir);
-            }
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        for dir in rows.flatten() {
+            set.insert(dir);
         }
 
         let mut stmt = conn
             .prepare("SELECT run_dir FROM completed")
             .context("failed to query completed run_dirs")?;
-        let rows = stmt
-            .query_map([], |row| row.get::<_, String>(0))?;
-        for row in rows {
-            if let Ok(dir) = row {
-                set.insert(dir);
-            }
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        for dir in rows.flatten() {
+            set.insert(dir);
         }
 
         Ok(set)

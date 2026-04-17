@@ -359,6 +359,7 @@ impl Pipeline {
             &config.model,
             &prompt_path,
             &self.worktree,
+            &self.run_dir,
         )
         .await
         .context("Plan: copilot run failed")?;
@@ -410,6 +411,7 @@ impl Pipeline {
             &config.model,
             &prompt_path,
             &self.worktree,
+            &self.run_dir,
         )
         .await
         .context("Implement: copilot run failed")?;
@@ -442,6 +444,7 @@ impl Pipeline {
             &config.model,
             &prompt_path,
             &self.worktree,
+            &self.run_dir,
         )
         .await
         .context("Verify: copilot run failed")?;
@@ -597,7 +600,10 @@ impl Pipeline {
         // If the PR was closed without merging, mark the pipeline as failed
         // so it stops polling but can be investigated.
         if pr_state == "CLOSED" {
-            info!("PR #{} was closed without merging. Marking failed.", pr_number);
+            info!(
+                "PR #{} was closed without merging. Marking failed.",
+                pr_number
+            );
             self.stage = Stage::Failed("PR closed without merging".to_string());
             return Ok(true);
         }
@@ -713,6 +719,7 @@ impl Pipeline {
             &config.model,
             &prompt_path,
             &self.worktree,
+            &self.run_dir,
         )
         .await
         .context("Fix: copilot run failed")?;
