@@ -32,6 +32,10 @@ struct Cli {
     #[arg(long, default_value = "copilot")]
     copilot_cmd: String,
 
+    /// AI model to use (e.g. claude-opus-4.6, gpt-5.2)
+    #[arg(short = 'm', long, default_value = "claude-opus-4.6")]
+    model: String,
+
     /// Directory where run artifacts are stored
     #[arg(long, default_value = "./runs")]
     runs_dir: String,
@@ -48,6 +52,7 @@ pub struct Config {
     pub label: String,
     pub poll_interval: u64,
     pub copilot_cmd: String,
+    pub model: String,
     pub runs_dir: PathBuf,
     pub max_concurrent: usize,
 }
@@ -59,6 +64,7 @@ impl Config {
             label: cli.label.clone(),
             poll_interval: cli.poll_interval,
             copilot_cmd: cli.copilot_cmd.clone(),
+            model: cli.model.clone(),
             runs_dir: PathBuf::from(&cli.runs_dir),
             max_concurrent: cli.max_concurrent,
         }
@@ -121,6 +127,7 @@ async fn main() -> Result<()> {
     info!("  label          : {}", config.label);
     info!("  poll_interval  : {}s", config.poll_interval);
     info!("  copilot_cmd    : {}", config.copilot_cmd);
+    info!("  model          : {}", config.model);
     info!("  runs_dir       : {}", config.runs_dir.display());
     info!("  max_concurrent : {}", config.max_concurrent);
     info!("=======================================================");

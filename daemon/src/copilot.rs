@@ -27,7 +27,7 @@ use tracing::{error, info};
 ///
 /// stdout and stderr are inherited so copilot output streams to our terminal.
 /// stdin is nulled out -- no interactive input.
-pub async fn run_copilot(copilot_cmd: &str, prompt_file: &Path, work_dir: &Path) -> Result<()> {
+pub async fn run_copilot(copilot_cmd: &str, model: &str, prompt_file: &Path, work_dir: &Path) -> Result<()> {
     // Read the prompt file content to pass via -p.
     let content = tokio::fs::read_to_string(prompt_file)
         .await
@@ -43,6 +43,8 @@ pub async fn run_copilot(copilot_cmd: &str, prompt_file: &Path, work_dir: &Path)
     let result = tokio::process::Command::new(copilot_cmd)
         .arg("-p")
         .arg(&content)
+        .arg("--model")
+        .arg(model)
         .arg("--yolo")
         .arg("--no-ask-user")
         .current_dir(work_dir)

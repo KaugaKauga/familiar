@@ -262,7 +262,7 @@ impl Pipeline {
         let prompt_path = self.run_dir.join("prompt_plan.md");
         fs::write(&prompt_path, &prompt).context("Plan: failed to write prompt_plan.md")?;
 
-        copilot::run_copilot(&config.copilot_cmd, &prompt_path, &self.worktree)
+        copilot::run_copilot(&config.copilot_cmd, &config.model, &prompt_path, &self.worktree)
             .await
             .context("Plan: copilot run failed")?;
 
@@ -308,7 +308,7 @@ impl Pipeline {
         fs::write(&prompt_path, &prompt)
             .context("Implement: failed to write prompt_implement.md")?;
 
-        copilot::run_copilot(&config.copilot_cmd, &prompt_path, &self.worktree)
+        copilot::run_copilot(&config.copilot_cmd, &config.model, &prompt_path, &self.worktree)
             .await
             .context("Implement: copilot run failed")?;
 
@@ -335,7 +335,7 @@ impl Pipeline {
         let prompt_path = self.run_dir.join("prompt_verify.md");
         fs::write(&prompt_path, &prompt).context("Verify: failed to write prompt_verify.md")?;
 
-        copilot::run_copilot(&config.copilot_cmd, &prompt_path, &self.worktree)
+        copilot::run_copilot(&config.copilot_cmd, &config.model, &prompt_path, &self.worktree)
             .await
             .context("Verify: copilot run failed")?;
 
@@ -563,7 +563,7 @@ impl Pipeline {
         let prompt_path = self.run_dir.join("prompt_fix.md");
         fs::write(&prompt_path, &prompt).context("Fix: failed to write prompt_fix.md")?;
 
-        copilot::run_copilot(&config.copilot_cmd, &prompt_path, &self.worktree)
+        copilot::run_copilot(&config.copilot_cmd, &config.model, &prompt_path, &self.worktree)
             .await
             .context("Fix: copilot run failed")?;
 
