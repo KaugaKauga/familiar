@@ -71,7 +71,25 @@ cargo build --release
 ### Start the daemon
 
 ```
-cargo run -- --repo owner/repo --label guild
+guild start owner/repo
+```
+
+Or with non-default options:
+
+```
+guild start owner/repo \
+  --label guild \
+  --poll-interval 30 \
+  --model claude-opus-4.6 \
+  --max-concurrent 5 \
+  --no-tui
+```
+
+Alternatively, run directly with cargo:
+
+```
+cd daemon
+cargo run -- start owner/repo
 ```
 
 That's it. The daemon starts polling. To process an issue:
