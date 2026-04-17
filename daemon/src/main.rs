@@ -150,8 +150,9 @@ fn run_status(runs_dir: &str) -> Result<()> {
         for p in pipelines.values() {
             let ordinal = p.stage.ordinal();
             let total = pipeline::Stage::total_stages();
-            let title = if p.issue_title.len() > 30 {
-                format!("{}…", &p.issue_title[..29])
+            let title = if p.issue_title.chars().count() > 30 {
+                let truncated: String = p.issue_title.chars().take(29).collect();
+                format!("{truncated}…")
             } else {
                 p.issue_title.clone()
             };

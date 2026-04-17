@@ -252,8 +252,9 @@ fn render_pipeline_table(
         };
 
         // Truncate long titles to keep the table readable
-        let title_display = if p.issue_title.len() > 30 {
-            format!("{}…", &p.issue_title[..29])
+        let title_display = if p.issue_title.chars().count() > 30 {
+            let truncated: String = p.issue_title.chars().take(29).collect();
+            format!("{truncated}…")
         } else {
             p.issue_title.clone()
         };
