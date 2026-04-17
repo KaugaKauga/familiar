@@ -107,7 +107,8 @@ Comments without `@guild` are left alone.
 guild/
   daemon/                     # Rust binary — the orchestrator
     src/
-      main.rs                 # CLI parsing, main poll loop, state persistence
+      main.rs                 # CLI parsing, main poll loop
+      db.rs                   # SQLite state persistence (guild.db)
       github.rs               # All gh/git CLI wrappers
       pipeline.rs             # Per-issue state machine (the 9 stages)
       copilot.rs              # Spawns copilot with: -p <prompt> --yolo --no-ask-user
@@ -118,7 +119,7 @@ guild/
     verify.md
     fix.md
   runs/                       # Per-run artifacts (gitignored)
-    state.json                # Persisted pipeline state (survives restarts)
+    guild.db                  # SQLite database (pipelines + completed ledger)
     {timestamp}-{repo}-{issue}/
       issue.json              # Raw issue metadata
       issue_body.md           # Issue description
@@ -133,10 +134,19 @@ guild/
 
 ### State persistence
 
-Pipeline state is serialized to `runs/state.json` after every poll cycle and on
-graceful shutdown (Ctrl+C). When the daemon restarts, it loads this file and
-resumes each pipeline from its current stage. You can stop and restart the
-daemon without losing progress.
+Pipeline state lives in a SQLite database (`runs/guild.db`) with two tables:
+
+- **`pipelines`** -- one row per active pipeline, updated after every stage transition
+- **`completed`** -- permanent ledger of issues that reached Done (prevents re-runs)
+
+SQLite WAL (write-ahead log) mode ensures crash safety: the database is always
+in a consistent state, even after a hard kill. Stage transitions are persisted
+immediately (not batched), so progress survives crashes mid-pipeline. When a
+pipeline completes, it is atomically moved from `pipelines` to `completed` in a
+single transaction.
+
+On first run after upgrading, any existing `state.json` is automatically
+migrated into the database and renamed to `state.json.bak`.
 
 ### Copilot integration
 
