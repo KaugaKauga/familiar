@@ -122,7 +122,7 @@ async fn main() -> Result<()> {
                 model,
                 runs_dir: PathBuf::from(&runs_dir),
                 max_concurrent,
-                agents_dir: PathBuf::from(&agents_dir),
+                agents_dir: PathBuf::from(&agents_dir).canonicalize().with_context(|| format!("agents directory not found: {} (pass --agents-dir with a valid path)", agents_dir))?,
             };
 
             run_start(config, no_tui).await
