@@ -129,7 +129,7 @@ impl Pipeline {
             Stage::Plan => self.do_plan(config).await,
             Stage::Implement => self.do_implement(config).await,
             Stage::Verify => self.do_verify(config).await,
-            Stage::Submit => self.do_submit(config).await,
+            Stage::Submit => self.do_submit().await,
             Stage::Watch => self.do_watch().await,
             Stage::Fix => self.do_fix(config).await,
             Stage::Done => Ok(false),
@@ -375,6 +375,7 @@ impl Pipeline {
             "No plan file found -- read the issue and implement directly.",
         );
         let learnings = read_file_or(&self.run_dir.join("learnings.md"), "");
+        let desc_path = self.run_dir.join("pr_description.md");
 
         let prompt = format!(
             "You are an autonomous coding agent in the IMPLEMENT stage.\n\
@@ -395,11 +396,18 @@ impl Pipeline {
              1. Write the code in the worktree at: {worktree}\n\
              2. Write tests\n\
              3. Wire it into the UI so a user can actually see/use it\n\
-             4. Do NOT commit -- the system will handle that\n",
+             4. Do NOT commit -- the system will handle that\n\
+             5. When done, write a file at `{desc_path}` with exactly two sections:\n\
+                - **## Problem** — A short problem statement (max three sentences). \
+                  Do NOT copy the issue description. Summarize the core problem in your own words.\n\
+                - **## Solution** — A short description of how you solved the problem. \
+                  Be specific about what was changed and why.\n\
+                Keep it concise. No boilerplate.\n",
             issue_body = issue_body,
             plan = plan,
             learnings = learnings,
             worktree = self.worktree.display(),
+            desc_path = desc_path.display(),
         );
 
         let prompt_path = self.run_dir.join("prompt_implement.md");
@@ -453,7 +461,7 @@ impl Pipeline {
         Ok(true)
     }
 
-    async fn do_submit(&mut self, config: &Config) -> Result<bool> {
+    async fn do_submit(&mut self) -> Result<bool> {
         // Clean up stale git lock file from a potentially killed process.
         let git_lock = self.worktree.join(".git/index.lock");
         if git_lock.exists() {
@@ -489,55 +497,9 @@ impl Pipeline {
                 format!("guild: {} (#{})", self.issue_title, self.issue_number)
             };
 
-            // Ask copilot to write the PR description.
-            let issue_body = read_file_or(&self.run_dir.join("issue_body.md"), "");
-            let plan = read_file_or(&self.worktree.join("plan.md"), "");
-            let desc_path = self.run_dir.join("pr_description.md");
-
-            let desc_prompt = format!(
-                "You are writing a pull request description.\n\
-                 \n\
-                 ## Issue\n\
-                 {issue_body}\n\
-                 \n\
-                 ## Plan\n\
-                 {plan}\n\
-                 \n\
-                 ## Instructions\n\
-                 Write the PR description to the file `{path}`.\n\
-                 \n\
-                 The file must contain exactly two sections:\n\
-                 1. **## Problem** — A short problem statement. Max three sentences. \
-                    Do NOT copy the issue description. Summarize the core problem in your own words.\n\
-                 2. **## Solution** — A short description of how you solved the problem. \
-                    Be specific about what was changed and why.\n\
-                 \n\
-                 Keep it concise. No boilerplate.\n",
-                issue_body = issue_body,
-                plan = plan,
-                path = desc_path.display(),
-            );
-
-            let desc_prompt_path = self.run_dir.join("prompt_pr_description.md");
-            fs::write(&desc_prompt_path, &desc_prompt)
-                .context("Submit: failed to write prompt_pr_description.md")?;
-
-            if let Err(e) = copilot::run_copilot(
-                &config.copilot_cmd,
-                &config.model,
-                &desc_prompt_path,
-                &self.worktree,
-                &self.run_dir,
-            )
-            .await
-            {
-                tracing::warn!(
-                    "Submit: copilot PR description failed, using fallback: {:#}",
-                    e
-                );
-            }
-
-            let agent_description = read_file_or(&desc_path, "");
+            // Read the PR description written by the IMPLEMENT agent.
+            let agent_description =
+                read_file_or(&self.run_dir.join("pr_description.md"), "");
 
             let mut pr_body = format!("Closes #{}\n", self.issue_number);
             if !agent_description.is_empty() {
