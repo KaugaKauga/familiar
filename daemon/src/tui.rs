@@ -101,6 +101,12 @@ async fn render_loop(
 
         let state = state_rx.borrow().clone();
 
+        // Force a full screen clear before every frame.  Copilot
+        // subprocesses may write to the terminal despite setsid(),
+        // corrupting the alternate screen buffer.  A full clear
+        // ensures the next draw overwrites everything.
+        terminal.clear()?;
+
         terminal.draw(|frame| {
             let area = frame.area();
 
