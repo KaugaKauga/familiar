@@ -27,10 +27,10 @@ const BANNER: &str = r#"
 "#;
 
 const TAGLINE: &str = r#"
-    ┌──────────────────────────────────────────────────┐
-    │  "Post a quest on the board, head to the tavern, │
-    │   and wake up to a pull request on your desk."   │
-    └──────────────────────────────────────────────────┘
+    ┌─────────────────────────────────────────────────────────────────┐
+    │  "From issue to pull request, the guild works through the      │
+    │   night so you don't have to."                                 │
+    └─────────────────────────────────────────────────────────────────┘
 "#;
 
 /// Print the guild banner with colors to stdout.
