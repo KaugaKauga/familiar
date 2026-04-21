@@ -211,7 +211,7 @@ fn stage_status_text(stage: &pipeline::Stage, has_running_task: bool) -> String 
     }
 }
 
-async fn run_start(config: Config, no_tui: bool) -> Result<()> {
+async fn run_start(mut config: Config, no_tui: bool) -> Result<()> {
     // --- ensure runs dir & repos dir ---------------------------------------
     std::fs::create_dir_all(&config.runs_dir).with_context(|| {
         format!(
@@ -224,6 +224,15 @@ async fn run_start(config: Config, no_tui: bool) -> Result<()> {
             "failed to create repos directory at {}",
             config.repos_dir.display()
         )
+    })?;
+
+    // Canonicalize to absolute paths so that relative paths resolve correctly
+    // when git commands run with a different current_dir (e.g. bare repo).
+    config.runs_dir = config.runs_dir.canonicalize().with_context(|| {
+        format!("failed to canonicalize runs_dir: {}", config.runs_dir.display())
+    })?;
+    config.repos_dir = config.repos_dir.canonicalize().with_context(|| {
+        format!("failed to canonicalize repos_dir: {}", config.repos_dir.display())
     })?;
 
     // --- tracing -----------------------------------------------------------
