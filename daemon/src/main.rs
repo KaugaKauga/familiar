@@ -68,7 +68,7 @@ enum Commands {
         max_concurrent: usize,
 
         /// Directory containing agent prompt templates
-        #[arg(long, default_value = "./agents")]
+        #[arg(long, default_value = concat!(env!("CARGO_MANIFEST_DIR"), "/../agents"))]
         agents_dir: String,
 
         /// Disable the TUI and use plain log output
