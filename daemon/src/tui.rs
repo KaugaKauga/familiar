@@ -24,47 +24,8 @@ use ratatui::Terminal;
 
 use futures::StreamExt;
 
-use crate::pipeline::Stage;
 use crate::db::Db;
 use crate::pipeline::{Pipeline, Stage};
-
-// ---------------------------------------------------------------------------
-// Shared state types
-// ---------------------------------------------------------------------------
-
-/// Snapshot of a single pipeline for TUI rendering.
-#[derive(Clone, Debug)]
-pub struct PipelineSnapshot {
-    pub issue_number: u64,
-    pub issue_title: String,
-    pub stage: Stage,
-    pub branch_name: String,
-    pub pr_number: Option<u64>,
-    /// Brief status text shown in the TUI (e.g. "agent running…").
-    pub status_text: String,
-}
-
-/// Full daemon state sent to the TUI on each cycle.
-#[derive(Clone, Debug)]
-pub struct DaemonState {
-    pub pipelines: Vec<PipelineSnapshot>,
-    pub last_poll: Option<chrono::DateTime<chrono::Utc>>,
-    pub cycle_count: u64,
-    pub repo: String,
-    pub poll_interval: u64,
-}
-
-impl Default for DaemonState {
-    fn default() -> Self {
-        Self {
-            pipelines: Vec::new(),
-            last_poll: None,
-            cycle_count: 0,
-            repo: String::new(),
-            poll_interval: 10,
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // TUI runner
@@ -87,8 +48,15 @@ pub async fn run_tui(
     let backend = CrosstermBackend::new(stdout());
     let mut terminal = Terminal::new(backend)?;
 
-    let result =
-        render_loop(&mut terminal, &db, &running, &repo, poll_interval, &shutdown).await;
+    let result = render_loop(
+        &mut terminal,
+        &db,
+        &running,
+        &repo,
+        poll_interval,
+        &shutdown,
+    )
+    .await;
 
     disable_raw_mode()?;
     stdout().execute(LeaveAlternateScreen)?;

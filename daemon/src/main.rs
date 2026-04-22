@@ -320,8 +320,14 @@ async fn run_start(mut config: Config, no_tui: bool) -> Result<()> {
         let poll_interval = config.poll_interval;
         let shutdown_tui = Arc::clone(&shutdown);
         tokio::spawn(async move {
-            if let Err(e) =
-                tui::run_tui(db_for_tui, running_for_tui, repo, poll_interval, shutdown_tui).await
+            if let Err(e) = tui::run_tui(
+                db_for_tui,
+                running_for_tui,
+                repo,
+                poll_interval,
+                shutdown_tui,
+            )
+            .await
             {
                 eprintln!("TUI error: {}", e);
             }
