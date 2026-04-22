@@ -5,31 +5,26 @@ use crossterm::ExecutableCommand;
 use std::io::stdout;
 
 const BANNER: &str = r#"
-                      /\       /\
-                     /  \_/\__/  \
-                    / \  _/\_  / \
-                   /   \/    \/   \
-                  / /|          |\ \
-                 / / | FAMILIAR | \ \
-                / /  |  HOUSE   |  \ \
-               /_/  /||  ||  ||\   \_\
-              |  | / ||  ||  || \ |  |
-              |🔮| | |+--++--+| | |📖|
-              |  | | ||/\||/\|| | |  |
-              |  |_| ||''||''|| |_|  |
-              |  |   |+--++--+|   |  |
-              | .|   ||  ()  ||   |. |
-              |/ |   ||      ||   | \|
-             /|  |   |+------+|   |  |\
-            /_|__|___|________|___|__|_\
-           |  ~~  {come in, we're open}  |
-           |_____________________________|
+                          /\_/\
+                     ____/ o o \
+                   /~____  =ω=  /
+                  (______)__m_m_/
+                   |     /  \/
+                   |    /  __\
+                   |   / /'  `\
+                   |  / /      \
+              .-~~~|_/ /~~~~~~~~`-.
+             /  ✦  .  .  ✦  .  ✦  \
+            :  .  ✦  .  ✦  .  ✦  . :
+             \ ✦  .  ✦  .  ✦  .  ✦/
+              `-.____.~~~~.____.-'
+                   ╱  FAMILIAR  ╲
 "#;
 
 const TAGLINE: &str = r#"
     ┌─────────────────────────────────────────────────────────────────┐
-    │  "From issue to pull request, your familiar works through the  │
-    │   night so you don't have to."                                 │
+    │  Summoned by a label, your familiar toils through the night —  │
+    │  from issue to pull request, while you rest.                   │
     └─────────────────────────────────────────────────────────────────┘
 "#;
 
@@ -37,7 +32,7 @@ const TAGLINE: &str = r#"
 pub fn print_banner() {
     let mut out = stdout();
 
-    let _ = out.execute(SetForegroundColor(Color::DarkYellow));
+    let _ = out.execute(SetForegroundColor(Color::Magenta));
     let _ = out.execute(Print(BANNER));
     let _ = out.execute(SetForegroundColor(Color::Cyan));
     let _ = out.execute(Print(TAGLINE));

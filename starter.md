@@ -1,12 +1,12 @@
-You are helping me build my own "software factory" — an autonomous loop that
-takes a Github Issue and drives it to a reviewed, green pull request with
-minimal human intervention.
+You are helping me build a **familiar** — a loyal spirit companion that takes a
+GitHub Issue and carries it to a reviewed, green pull request while I rest.
 
-I want YOU (Copilot) to do the thinking. I will only write the thinnest
-possible glue to pass data between stages. Any decision — what to implement,
-how to react to a CI failure, how to respond to a review comment — is yours.
+I want YOU (Copilot) to be the familiar — to do the thinking and the work. I
+will only write the thinnest possible glue to pass data between stages. Any
+decision — what to implement, how to react to a CI failure, how to respond to
+a review comment — is yours.
 
-The factory runs in stages:
+The familiar works in stages:
 
 1. INGEST — pull the github issue via the gh cli. Read description,
    acceptance criteria, comments, linked tickets.

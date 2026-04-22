@@ -20,7 +20,7 @@ use tui::{DaemonState, PipelineSnapshot};
 // CLI
 // ---------------------------------------------------------------------------
 
-/// Familiar — an autonomous software factory.
+/// Familiar — a spectral companion that does your bidding.
 #[derive(Parser, Debug)]
 #[command(name = "familiar", version, about)]
 struct Cli {
@@ -30,7 +30,7 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Start the familiar daemon with a live interactive dashboard.
+    /// Summon your familiar with a live interactive dashboard.
     Start {
         /// GitHub repo in owner/repo format (positional or --repo)
         #[arg(value_name = "REPO")]
@@ -282,12 +282,12 @@ async fn run_start(mut config: Config, no_tui: bool) -> Result<()> {
     // --- print banner (before TUI takes over the screen) -------------------
     if !no_tui {
         banner::print_banner();
-        println!("  Starting daemon for {}...\n", config.repo);
+        println!("  Summoning familiar for {}...\n", config.repo);
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
 
     info!("=======================================================");
-    info!("  Familiar daemon starting");
+    info!("  Familiar spirit awakening");
     info!("  repo           : {}", config.repo);
     info!("  label          : {}", config.label);
     info!("  poll_interval  : {}s", config.poll_interval);
@@ -709,7 +709,7 @@ async fn run_start(mut config: Config, no_tui: bool) -> Result<()> {
         tokio::time::sleep(std::time::Duration::from_secs(config.poll_interval)).await;
     }
 
-    info!("familiar daemon shut down cleanly");
+    info!("familiar spirit returns to slumber");
     Ok(())
 }
 fn cleanup_orphan_run_dirs(runs_dir: &std::path::Path, db: &db::Db) {
