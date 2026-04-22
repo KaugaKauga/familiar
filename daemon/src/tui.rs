@@ -58,7 +58,7 @@ impl Default for DaemonState {
             last_poll: None,
             cycle_count: 0,
             repo: String::new(),
-            poll_interval: 30,
+            poll_interval: 10,
         }
     }
 }

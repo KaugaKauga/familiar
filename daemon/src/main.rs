@@ -45,7 +45,7 @@ enum Commands {
         label: String,
 
         /// Seconds between polling cycles
-        #[arg(short, long, default_value_t = 30)]
+        #[arg(short, long, default_value_t = 10)]
         poll_interval: u64,
 
         /// Which agent CLI to drive: `copilot` or `claude`.
