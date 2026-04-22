@@ -409,7 +409,7 @@ impl Pipeline {
         agent::run(
             config.backend,
             &config.agent_cmd,
-            &config.model,
+            &config.planning_model,
             &prompt_path,
             &self.worktree,
             &self.run_dir,
@@ -459,7 +459,7 @@ impl Pipeline {
         agent::run(
             config.backend,
             &config.agent_cmd,
-            &config.model,
+            &config.coding_model,
             &prompt_path,
             &self.worktree,
             &self.run_dir,
@@ -490,7 +490,7 @@ impl Pipeline {
         agent::run(
             config.backend,
             &config.agent_cmd,
-            &config.model,
+            &config.coding_model,
             &prompt_path,
             &self.worktree,
             &self.run_dir,
@@ -819,7 +819,7 @@ impl Pipeline {
         agent::run(
             config.backend,
             &config.agent_cmd,
-            &config.model,
+            &config.coding_model,
             &prompt_path,
             &self.worktree,
             &self.run_dir,
