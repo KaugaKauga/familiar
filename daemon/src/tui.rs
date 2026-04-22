@@ -1,4 +1,4 @@
-//! Terminal UI dashboard for the Guild daemon.
+//! Terminal UI dashboard for the Familiar daemon.
 //!
 //! Renders a live table of active pipelines showing issue number, stage,
 //! progress bar, and branch name.  Driven by a `tokio::sync::watch` channel
@@ -248,13 +248,13 @@ fn render_header(frame: &mut ratatui::Frame, area: Rect, state: &DaemonState) {
 
     let header = Paragraph::new(Line::from(vec![
         Span::styled(
-            " ⚒️  GUILD ",
+            " ✦ FAMILIAR ",
             Style::default()
-                .fg(Color::Yellow)
+                .fg(Color::Magenta)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            "— Autonomous Software Factory  ",
+            "— your autonomous companion  ",
             Style::default().fg(Color::DarkGray),
         ),
         Span::styled(
@@ -288,7 +288,7 @@ fn render_pipeline_table(
 ) {
     if state.pipelines.is_empty() {
         let empty = Paragraph::new(Line::from(vec![Span::styled(
-            "  No active pipelines — waiting for labeled issues...",
+            "  No bindings yet — waiting for labeled issues…",
             Style::default()
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::ITALIC),
@@ -566,6 +566,40 @@ mod tests {
             ..Default::default()
         };
         assert!(!has_active_pipelines(&done_state));
+    }
+
+    #[test]
+    fn header_renders_familiar_brand() {
+        // Render the header into a test buffer and assert the buffer
+        // contains the new brand and does NOT contain the old one.
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        let state = DaemonState {
+            repo: "owner/repo".into(),
+            ..Default::default()
+        };
+
+        let backend = TestBackend::new(80, 3);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                render_header(frame, frame.area(), &state);
+            })
+            .unwrap();
+
+        let buf = terminal.backend().buffer();
+        let rendered: String = buf.content.iter().map(|c| c.symbol()).collect();
+        assert!(
+            rendered.contains("FAMILIAR"),
+            "header should contain FAMILIAR brand, got: {:?}",
+            rendered
+        );
+        assert!(
+            !rendered.contains("GUILD"),
+            "header should not contain the old GUILD brand, got: {:?}",
+            rendered
+        );
     }
 
     #[test]
