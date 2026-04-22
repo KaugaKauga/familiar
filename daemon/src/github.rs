@@ -270,11 +270,11 @@ pub async fn add_worktree(bare_repo: &Path, worktree_dest: &Path, branch: &str) 
 
     // Configure user identity in the worktree so commits work.
     let _ = run_git(
-        &["config", "user.email", "familiar@users.noreply.github.com"],
+        &["config", "user.email", "familiar-wisp@users.noreply.github.com"],
         worktree_dest,
     )
     .await;
-    let _ = run_git(&["config", "user.name", "Familiar"], worktree_dest).await;
+    let _ = run_git(&["config", "user.name", "Familiar Wisp"], worktree_dest).await;
 
     Ok(())
 }
