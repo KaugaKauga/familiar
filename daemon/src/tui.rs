@@ -1,8 +1,9 @@
 //! Terminal UI dashboard for the Familiar daemon.
 //!
 //! Renders a live table of active pipelines showing issue number, stage,
-//! progress bar, and branch name.  Driven by a `tokio::sync::watch` channel
-//! that receives `DaemonState` updates from the main daemon loop.
+//! progress bar, and branch name.  Your familiar's scrying glass — driven
+//! by a `tokio::sync::watch` channel that receives `DaemonState` updates
+//! from the main daemon loop.
 
 use std::io::{self, stdout};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -248,13 +249,13 @@ fn render_header(frame: &mut ratatui::Frame, area: Rect, state: &DaemonState) {
 
     let header = Paragraph::new(Line::from(vec![
         Span::styled(
-            " ⚒️  FAMILIAR ",
+            " 🐈‍⬛ FAMILIAR ",
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            "— Autonomous Software Factory  ",
+            "— Your Ghostly Companion  ",
             Style::default().fg(Color::DarkGray),
         ),
         Span::styled(
@@ -288,7 +289,7 @@ fn render_pipeline_table(
 ) {
     if state.pipelines.is_empty() {
         let empty = Paragraph::new(Line::from(vec![Span::styled(
-            "  No active pipelines — waiting for labeled issues...",
+            "  No active pipelines — your familiar awaits a summoning...",
             Style::default()
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::ITALIC),

@@ -1,19 +1,23 @@
 # Familiar
 
-An autonomous software factory. Point it at a GitHub repo, label an issue, and
-Familiar will implement the change, open a draft PR, and keep fixing it until CI is
-green — with no human in the loop.
+> *In folklore, a **familiar** is a spirit companion — often in the shape of a cat,
+> owl, or raven — that serves a practitioner of magic, carrying out their will.*
+
+Your familiar is a tireless spirit bound to your GitHub repo. Point it at a
+repository, label an issue, and your familiar will carry out the work — writing
+code, opening a draft PR, and tending to it until CI is green — while you rest.
 
 ## What it does
 
-Familiar is a Rust daemon that continuously monitors a GitHub repository for issues
-carrying a specific label (default: `familiar`). When it finds one, it drives the
-issue through a fully automated pipeline that ends with a reviewed, green pull
-request.
+Familiar is a Rust daemon that watches over a GitHub repository, waiting for issues
+marked with a special label (default: `familiar`). When it senses one, it takes the
+issue under its wing and drives it through a fully automated pipeline that ends with
+a reviewed, green pull request.
 
-The daemon itself is **thin glue**. It handles orchestration, state, and
-GitHub interaction. All the actual thinking — what to implement, how to fix a
-test, how to respond to a review — is delegated to an external **agent CLI**
+The daemon itself is **thin glue** — the summoning circle, not the spirit. It
+handles orchestration, state, and GitHub interaction. All the actual thinking —
+what to implement, how to fix a test, how to respond to a review — is delegated
+to an external **agent CLI**
 running in non-interactive mode with full permissions. Two backends are
 supported out of the box — **GitHub Copilot CLI** (`copilot --yolo`) and
 **Anthropic Claude CLI** (`claude --permission-mode bypassPermissions`) —
@@ -208,27 +212,28 @@ spinners can't corrupt the TUI.
 
 ### Separation of concerns
 
-The daemon makes **zero** implementation decisions. It only decides *when* to invoke
+The daemon makes **zero** implementation decisions. It only decides *when* to summon
 the agent and *what context* to provide. All intelligence — what code to write, how
-to fix a test, how to address a review comment — lives in the agent process.
+to fix a test, how to address a review comment — lives in the spirit it calls upon.
 
 ### Repo learnings
 
-Familiar maintains a lightweight feedback loop via `.familiar/learnings.md` in the target
-repository. During the **UNDERSTAND** stage, the daemon reads this file (if it exists)
-and injects its contents into every agent prompt (PLAN, IMPLEMENT, FIX). This gives
-agents repo-specific context — build quirks, naming conventions, test patterns, common
-gotchas — without requiring human curation.
+Your familiar remembers what it learns. It maintains a lightweight memory via
+`.familiar/learnings.md` in the target repository. During the **UNDERSTAND** stage,
+the daemon reads this file (if it exists) and whispers its contents into every agent
+prompt (PLAN, IMPLEMENT, FIX). This gives agents repo-specific context — build
+quirks, naming conventions, test patterns, common gotchas — without requiring human
+curation.
 
-At the end of **IMPLEMENT** and **FIX**, agents are instructed to reflect on anything
-non-obvious they discovered and append it to `.familiar/learnings.md`. The file is
-committed alongside the rest of the code changes, so learnings accumulate over time
-and are available to future Familiar runs on the same repo.
+At the end of **IMPLEMENT** and **FIX**, the familiar reflects on anything non-obvious
+it discovered and appends it to `.familiar/learnings.md`. The file is committed
+alongside the rest of the code changes, so the familiar's knowledge deepens over
+time and carries forward to future summonings on the same repo.
 
 ## Design principles
 
-1. **The agent reads everything.** Don't pre-parse or summarize. Hand it the raw issue, the raw repo tree, the raw CI output.
+1. **The familiar reads everything.** Don't pre-parse or summarize. Hand it the raw issue, the raw repo tree, the raw CI output.
 2. **Never mark a PR ready.** The daemon creates draft PRs only. A human decides when to merge.
-3. **Never silence a failing check.** If the agent can't fix it, the pipeline retries. If it's truly stuck, the daemon keeps polling until a human intervenes.
-4. **State survives restarts.** Kill the daemon at any point, restart it, and it picks up where it left off.
-5. **`@familiar` is the control surface.** Comment on the PR to direct the agent. Everything else is ignored.
+3. **Never silence a failing check.** If the familiar can't fix it, it retries. If truly stuck, it keeps watch until a human intervenes.
+4. **State survives restarts.** Banish the daemon at any point, re-summon it, and it picks up where it left off.
+5. **`@familiar` is the control surface.** Comment on the PR to direct your familiar. Everything else is ignored.
