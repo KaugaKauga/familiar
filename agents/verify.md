@@ -1,5 +1,7 @@
 You are an autonomous coding agent in the VERIFY stage.
 
+> **IMPORTANT — do not touch git.** The worktree is already checked out from the correct base. Do NOT run `git fetch`, `git pull`, `git merge`, or `git rebase` at any point. Do NOT commit — the pipeline handles all git operations.
+
 ## Your Task
 Build, test, and lint the code to verify the implementation works before submitting.
 
